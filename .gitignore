@@ -1,0 +1,34 @@
+# Node
+node_modules/
+dist/
+.env
+
+# Java/Spring Boot
+target/
+*.jar
+*.war
+.mvn/
+mvnw
+mvnw.cmd
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+
+# Python/ML
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.pytest_cache/
+*.pkl
+*.joblib
+
+# Blockchain
+artifacts/
+cache/
+typechain-types/
+
+# General
+.DS_Store

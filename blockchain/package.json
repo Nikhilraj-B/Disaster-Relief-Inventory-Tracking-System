@@ -1,0 +1,23 @@
+{
+  "name": "disaster-relief-blockchain",
+  "version": "1.0.0",
+  "description": "DisasterReliefAudit smart contract for the Blockchain-Based Disaster Relief Inventory Tracker",
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy": "hardhat run scripts/deploy.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^4.0.0",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.11",
+    "@nomicfoundation/hardhat-mocha": "^3.1.0",
+    "@openzeppelin/contracts": "^5.0.2",
+    "chai": "^6.2.2",
+    "ethers": "^6.17.0",
+    "hardhat": "^3.12.0",
+    "mocha": "^11.8.0"
+  }
+}
