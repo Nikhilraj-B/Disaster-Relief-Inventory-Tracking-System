@@ -48,7 +48,9 @@ export default function WalletConnect({
       setConnected(true)
       onAddress?.(addr)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Wallet connection failed')
+      console.error('Wallet connection error:', err)
+      const msg = err instanceof Error ? err.message : (err as any)?.message || 'Wallet connection failed'
+      setError(msg)
     } finally {
       setBusy(false)
     }

@@ -7,7 +7,7 @@ const ABIText = readFileSync(new URL('../../frontend/src/blockchain/DisasterReli
 const ABI = JSON.parse(ABIText).abi
 
 const RPC = 'http://127.0.0.1:8545'
-const CONTRACT = '0x5FC8d32690cc91D4c39d9d3abcBD16989F875707'
+const CONTRACT = '0x5FbDB2315678afecb367f032d93F642f64180aa3'
 const API = 'http://127.0.0.1:8081/api'
 
 // Deterministic Hardhat role accounts (granted contract roles). Same as the
