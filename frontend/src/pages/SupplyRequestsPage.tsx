@@ -11,6 +11,7 @@ import type {
   SupplyRequest,
   SupplyRequestStatus,
   User,
+  Vehicle,
 } from '../api/types'
 
 interface ItemRow {
@@ -40,14 +41,13 @@ interface PendingAction {
 }
 
 const FLOW: FlowAction[] = [
-  { label: 'Approve', path: 'approve', from: ['CREATED'], roles: ['GOVERNMENT_ADMIN'] },
-  { label: 'Accept', path: 'accept', from: ['APPROVED'], roles: ['WAREHOUSE_MANAGER', 'GOVERNMENT_ADMIN'] },
-  { label: 'Dispatch', path: 'dispatch', from: ['ACCEPTED'], roles: ['TRANSPORT_OFFICER', 'GOVERNMENT_ADMIN'] },
-  { label: 'In Transit', path: 'in-transit', from: ['DISPATCHED'], roles: ['TRANSPORT_OFFICER', 'GOVERNMENT_ADMIN'] },
-  { label: 'Arrived', path: 'arrived', from: ['IN_TRANSIT'], roles: ['TRANSPORT_OFFICER', 'GOVERNMENT_ADMIN'] },
-  { label: 'Receive', path: 'receive', from: ['ARRIVED'], roles: ['CAMP_MANAGER', 'GOVERNMENT_ADMIN'] },
-  { label: 'Complete', path: 'complete', from: ['RECEIVED'], roles: ['CAMP_MANAGER', 'GOVERNMENT_ADMIN'] },
-  { label: 'Reject', path: 'reject', from: ['CREATED', 'APPROVED'], roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER'], confirm: 'Reject this request?' },
+  { label: 'Accept Request', path: 'accept', from: ['CREATED', 'APPROVED'], roles: ['WAREHOUSE_MANAGER', 'ADMIN'] },
+  { label: 'Assign Driver & Vehicle', path: 'assign-driver', from: ['ACCEPTED'], roles: ['TRANSPORT_OFFICER', 'ADMIN'] },
+  { label: 'Dispatch', path: 'dispatch', from: ['ACCEPTED'], roles: ['TRANSPORT_OFFICER', 'ADMIN'] },
+  { label: 'In Transit', path: 'in-transit', from: ['DISPATCHED'], roles: ['TRANSPORT_OFFICER', 'ADMIN'] },
+  { label: 'Receive Supplies', path: 'receive', from: ['IN_TRANSIT', 'ARRIVED'], roles: ['CAMP_MANAGER', 'ADMIN'] },
+  { label: 'Vehicle Returned (Complete)', path: 'complete', from: ['RECEIVED'], roles: ['TRANSPORT_OFFICER', 'ADMIN'] },
+  { label: 'Reject', path: 'reject', from: ['CREATED', 'APPROVED'], roles: ['WAREHOUSE_MANAGER', 'ADMIN'], confirm: 'Reject this request?' },
 ]
 
 function StepLine({ ok, children }: { ok: boolean; children: string }) {
@@ -65,19 +65,25 @@ export default function SupplyRequestsPage() {
   const [camps, setCamps] = useState<Facility[]>([])
   const [warehouses, setWarehouses] = useState<Facility[]>([])
   const [items, setItems] = useState<ReliefItem[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [, setUsers] = useState<User[]>([])
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const [showForm, setShowForm] = useState(false)
-  const [campId, setCampId] = useState('')
-  const [warehouseId, setWarehouseId] = useState('')
+  const [adminSelectedCampId, setAdminSelectedCampId] = useState('')
   const [itemRows, setItemRows] = useState<ItemRow[]>([])
-  const [transportId, setTransportId] = useState('')
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<PendingAction | null>(null)
 
-  const walletOf = (u: User | undefined): string | undefined => u?.walletAddress
+  // State for warehouse accepting modal (Warehouse Manager / Admin)
+  const [acceptModalRequest, setAcceptModalRequest] = useState<SupplyRequest | null>(null)
+  const [adminSelectedWarehouseId, setAdminSelectedWarehouseId] = useState('')
+
+  // State for driver assignment modal (Transport Officer / Admin)
+  const [assignDriverModalRequest, setAssignDriverModalRequest] = useState<SupplyRequest | null>(null)
+  const [selectedVehicleId, setSelectedVehicleId] = useState('')
+
   const requireActor = (): string => {
     if (!user?.walletAddress) {
       throw new Error(
@@ -91,17 +97,19 @@ export default function SupplyRequestsPage() {
     setLoading(true)
     setError('')
     try {
-      const [r, f, it, us] = await Promise.all([
+      const [r, f, it, us, v] = await Promise.all([
         api.get<SupplyRequest[]>('/supply-requests'),
         api.get<Facility[]>('/facilities'),
         api.get<ReliefItem[]>('/relief-items'),
         api.get<User[]>('/users'),
+        api.get<Vehicle[]>('/vehicles'),
       ])
       setRequests(r)
       setCamps(f.filter((x) => x.type === 'CAMP'))
       setWarehouses(f.filter((x) => x.type === 'WAREHOUSE'))
       setItems(it)
       setUsers(us)
+      setVehicles(v)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load requests')
     } finally {
@@ -114,11 +122,12 @@ export default function SupplyRequestsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
+  const myCamp = camps.find((c) => c.id === user?.facilityId || c.managerUserId === user?.userId)
+  const myWarehouse = warehouses.find((w) => w.id === user?.facilityId || w.managerUserId === user?.userId)
+
   const openForm = () => {
-    setCampId('')
-    setWarehouseId('')
+    setAdminSelectedCampId('')
     setItemRows([{ reliefItemId: '', itemName: '', requestedQty: '' }])
-    setTransportId('')
     setShowForm(true)
   }
 
@@ -174,6 +183,17 @@ export default function SupplyRequestsPage() {
     e.preventDefault()
     if (busy || pending) return
     setError('')
+
+    const effectiveCampId = user?.role === 'CAMP_MANAGER' ? myCamp?.id : adminSelectedCampId
+    if (!effectiveCampId) {
+      setError(
+        user?.role === 'CAMP_MANAGER'
+          ? 'You are not assigned to any camp yet. Please contact an admin to assign you to a camp.'
+          : 'Please select a camp.'
+      )
+      return
+    }
+
     setBusy(true)
     const validRows = itemRows.filter((r) => r.reliefItemId && r.requestedQty)
     const itemsPayload: RequestItem[] = validRows.map((r) => {
@@ -185,26 +205,26 @@ export default function SupplyRequestsPage() {
         requestedQty: Number(r.requestedQty),
       }
     })
-    try {
-      const warehouse = warehouses.find((w) => w.id === warehouseId)
-      const warehouseManager = users.find((u) => u.id === warehouse?.managerUserId)
-      const warehouseWallet = walletOf(warehouseManager)
-      if (!warehouseWallet) {
-        throw new Error('The warehouse manager has no linked Ethereum wallet; link one first.')
-      }
 
+    try {
       const id = crypto.randomUUID()
       setPending({ requestId: id, label: 'Create request', step: 'confirm' })
-      const signed = await blockchain.createRequest(id, warehouseWallet, requireActor())
+
+      // Open request created with ZeroAddress on-chain so any warehouse can accept
+      const zeroAddress = '0x0000000000000000000000000000000000000000'
+      const signed = await blockchain.createRequest(id, zeroAddress, requireActor())
+
       setPending({ requestId: id, label: 'Create request', step: 'submitted', txHash: signed.txHash })
       setPending({ requestId: id, label: 'Create request', step: 'verifying', txHash: signed.txHash })
+
       await api.post<SupplyRequest>('/supply-requests', {
         id,
-        campId,
-        warehouseId,
+        campId: effectiveCampId,
+        warehouseId: null,
         items: itemsPayload,
         txHashCreate: signed.txHash,
       })
+
       setPending({ requestId: id, label: 'Create request', step: 'done', txHash: signed.txHash })
       setShowForm(false)
       await load()
@@ -213,8 +233,99 @@ export default function SupplyRequestsPage() {
       const info = errorInfo(err)
       setError(info.message)
       setPending((prev) =>
-        prev ? { ...prev, step: 'failed', message: info.message, failedKind: info.failedKind } : prev,
+        prev ? { ...prev, step: 'failed', message: info.message, failedKind: info.failedKind } : prev
       )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleConfirmAccept = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!acceptModalRequest || busy || pending) return
+    setError('')
+    setBusy(true)
+
+    const requestId = acceptModalRequest.id
+    const targetWarehouse = user?.role === 'ADMIN'
+      ? warehouses.find((w) => w.id === adminSelectedWarehouseId)
+      : myWarehouse
+
+    if (!targetWarehouse) {
+      setError('Please select or verify your warehouse.')
+      setBusy(false)
+      return
+    }
+
+    setPending({ requestId, label: 'Accept request', step: 'confirm' })
+    try {
+      const accept = await blockchain.acceptRequest(requestId, requireActor())
+      setPending({ requestId, label: 'Accept request', step: 'submitted', txHash: accept.txHash })
+      setPending({ requestId, label: 'Accept request', step: 'verifying', txHash: accept.txHash })
+
+      await api.post<SupplyRequest>(`/supply-requests/${requestId}/accept`, {
+        txHash: accept.txHash,
+        warehouseId: targetWarehouse.id,
+      })
+
+      setPending((prev) => (prev ? { ...prev, step: 'done' } : prev))
+      setAcceptModalRequest(null)
+      setAdminSelectedWarehouseId('')
+      await load()
+      setPending(null)
+    } catch (err) {
+      const info = errorInfo(err)
+      setError(info.message)
+      setPending((p) => (p ? { ...p, step: 'failed', message: info.message, failedKind: info.failedKind } : p))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleConfirmAssignDriver = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!assignDriverModalRequest || busy || pending) return
+    setError('')
+    setBusy(true)
+
+    const requestId = assignDriverModalRequest.id
+    const chosenVehicle = vehicles.find((v) => v.id === selectedVehicleId)
+    if (!chosenVehicle) {
+      setError('Please select an available vehicle and driver.')
+      setBusy(false)
+      return
+    }
+
+    setPending({ requestId, label: 'Assign Driver & Vehicle', step: 'confirm' })
+    try {
+      const latestUsers = await api.get<User[]>('/users')
+      setUsers(latestUsers)
+
+      // Use active transporter wallet
+      const transporterWallet = requireActor()
+
+      const assign = await blockchain.assignTransporter(requestId, transporterWallet, requireActor())
+      setPending({ requestId, label: 'Assign Driver & Vehicle', step: 'submitted', txHash: assign.txHash })
+      setPending({ requestId, label: 'Assign Driver & Vehicle', step: 'verifying', txHash: assign.txHash })
+
+      await api.post<SupplyRequest>(`/supply-requests/${requestId}/assign-driver`, {
+        txHashAssign: assign.txHash,
+        transporterWallet,
+        vehicleId: chosenVehicle.id,
+        driverName: chosenVehicle.driverName,
+        driverId: chosenVehicle.driverId,
+        transporterUserId: user?.userId,
+      })
+
+      setPending((prev) => (prev ? { ...prev, step: 'done' } : prev))
+      setAssignDriverModalRequest(null)
+      setSelectedVehicleId('')
+      await load()
+      setPending(null)
+    } catch (err) {
+      const info = errorInfo(err)
+      setError(info.message)
+      setPending((p) => (p ? { ...p, step: 'failed', message: info.message, failedKind: info.failedKind } : p))
     } finally {
       setBusy(false)
     }
@@ -222,32 +333,40 @@ export default function SupplyRequestsPage() {
 
   const runAction = async (id: string, action: FlowAction) => {
     if (busy || pending) return
+
+    if (action.path === 'accept') {
+      const targetReq = requests.find((r) => r.id === id)
+      if (targetReq) {
+        setAcceptModalRequest(targetReq)
+        setAdminSelectedWarehouseId('')
+      }
+      return
+    }
+
+    if (action.path === 'assign-driver') {
+      const targetReq = requests.find((r) => r.id === id)
+      if (targetReq) {
+        setAssignDriverModalRequest(targetReq)
+        setSelectedVehicleId(targetReq.assignedVehicleId ?? '')
+      }
+      return
+    }
+
+    if (action.path === 'dispatch') {
+      const targetReq = requests.find((r) => r.id === id)
+      if (!targetReq?.assignedVehicleId && !targetReq?.assignedDriverName) {
+        setAssignDriverModalRequest(targetReq || null)
+        setError('Please assign a vehicle and driver before dispatching.')
+        return
+      }
+    }
+
     if (action.confirm && !window.confirm(action.confirm)) return
     setError('')
     setBusy(true)
     setPending({ requestId: id, label: action.label, step: 'confirm' })
     try {
-      if (action.path === 'accept') {
-        let transporterWallet: string | undefined
-        if (transportId) {
-          transporterWallet = walletOf(users.find((u) => u.id === transportId))
-        } else {
-          transporterWallet = users.find((u) => u.role === 'TRANSPORT_OFFICER')?.walletAddress
-        }
-        if (!transporterWallet) {
-          throw new Error('Select a transport officer with a linked wallet to assign.')
-        }
-        const accept = await blockchain.acceptRequest(id, requireActor())
-        setPending({ requestId: id, label: action.label, step: 'submitted', txHash: accept.txHash })
-        const assign = await blockchain.assignTransporter(id, transporterWallet, requireActor())
-        setPending({ requestId: id, label: action.label, step: 'submitted', txHash: assign.txHash })
-        setPending({ requestId: id, label: action.label, step: 'verifying', txHash: assign.txHash })
-        await api.post<SupplyRequest>(`/supply-requests/${id}/accept`, {
-          txHash: accept.txHash,
-          txHashAssign: assign.txHash,
-          transporterWallet,
-        })
-      } else if (action.path === 'reject') {
+      if (action.path === 'reject') {
         const fn =
           requests.find((r) => r.id === id)?.status === 'APPROVED'
             ? blockchain.rejectApprovedRequest
@@ -292,39 +411,45 @@ export default function SupplyRequestsPage() {
 
   const role = user?.role ?? ''
 
+  // Filter vehicles relevant for the assigning modal
+  const assignWarehouseId = assignDriverModalRequest?.warehouseId
+  const relevantVehiclesForAssign = vehicles.filter(
+    (v) => v.active && (!v.warehouseId || !assignWarehouseId || v.warehouseId === assignWarehouseId)
+  )
+
   const ActivePanel = ({ p }: { p: PendingAction }) => (
     <div className={`action-status ${p.step === 'failed' ? 'failed' : p.step === 'done' ? 'done' : ''}`}>
       <h4>{p.label}</h4>
       <ul className="act-steps">
-        <StepLine ok={p.step !== 'confirm'}>{p.step === 'confirm' ? 'Confirm in MetaMask' : 'Confirm in MetaMask'}</StepLine>
+        <StepLine ok={p.step !== 'confirm'}>Confirm in MetaMask</StepLine>
         <StepLine ok={p.step === 'submitted' || p.step === 'verifying' || p.step === 'done'}>
-          {p.step === 'confirm' ? 'Confirm in MetaMask' : p.txHash ? `Transaction submitted` : 'Transaction submitted'}
+          {p.txHash ? 'Transaction submitted' : 'Waiting for transaction'}
         </StepLine>
         <li className="act-step txhash">
           {p.txHash ? (
             <>
               <span>Tx:</span>
-              <code className="cid" title={p.txHash}>{p.txHash.slice(0, 18)}...</code>
+              <code className="cid" title={p.txHash}>
+                {p.txHash.slice(0, 18)}...
+              </code>
             </>
           ) : (
             <span>Tx: pending…</span>
           )}
         </li>
-        <StepLine ok={p.step === 'verifying' || p.step === 'done'}>
-          {p.step === 'verifying' || p.step === 'done' ? 'Backend verifying transaction…' : 'Backend verifying transaction…'}
-        </StepLine>
+        <StepLine ok={p.step === 'verifying' || p.step === 'done'}>Backend verifying transaction…</StepLine>
         <li className={`act-step ${p.step === 'done' ? 'ok' : ''} ${p.step === 'failed' ? 'fail' : ''}`}>
           <span>{p.step === 'done' ? '✓' : p.step === 'failed' ? '✗' : '…'}</span>
           {p.step === 'done'
             ? 'Blockchain verified ✓'
             : p.step === 'failed'
               ? p.failedKind === 'rejected'
-                ? 'Transaction cancelled in MetaMask. No blockchain transaction was submitted.'
+                ? 'Transaction cancelled in MetaMask.'
                 : p.failedKind === 'verification'
                   ? 'Blockchain verification failed ✗ Request state was not changed.'
                   : p.failedKind === 'wallet'
-                    ? 'Wallet or network error. No blockchain transaction was submitted.'
-                    : 'Blockchain error. Request state was not changed.'
+                    ? 'Wallet error. No transaction submitted.'
+                    : 'Blockchain error. State not changed.'
               : 'Waiting for confirmation…'}
         </li>
       </ul>
@@ -336,7 +461,7 @@ export default function SupplyRequestsPage() {
       <PageHeader
         title="Supply Requests"
         action={
-          (role === 'CAMP_MANAGER' || role === 'GOVERNMENT_ADMIN') && (
+          (role === 'CAMP_MANAGER' || role === 'ADMIN') && (
             <button className="btn btn-primary" onClick={openForm} disabled={busy || !!pending}>
               + New Request
             </button>
@@ -345,13 +470,139 @@ export default function SupplyRequestsPage() {
       />
       {error && <ErrorBanner message={error} />}
 
+      {/* Accept Modal (Warehouse Manager / Admin) */}
+      {acceptModalRequest && (
+        <div className="card form" style={{ border: '2px solid #27ae60', marginBottom: '2rem' }}>
+          <h3>Accept Supply Request</h3>
+          <p className="muted">
+            Request from <strong>{camps.find((c) => c.id === acceptModalRequest.campId)?.name ?? shortId(acceptModalRequest.campId)}</strong>
+          </p>
+
+          <form onSubmit={handleConfirmAccept}>
+            {user?.role === 'ADMIN' ? (
+              <label>
+                Accepting Warehouse
+                <select
+                  value={adminSelectedWarehouseId}
+                  onChange={(e) => setAdminSelectedWarehouseId(e.target.value)}
+                  required
+                >
+                  <option value="">Select Warehouse</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#34495e', color: '#fff', borderRadius: '4px' }}>
+                <strong>Accepting Warehouse: </strong>
+                {myWarehouse ? myWarehouse.name : '⚠️ You are not assigned to a warehouse yet! Contact Admin.'}
+              </div>
+            )}
+
+            <p className="muted" style={{ fontSize: '0.88rem', margin: '0.75rem 0' }}>
+              ℹ️ Once accepted, the request will be assigned to this warehouse. A Transport Officer will assign an available vehicle and driver for dispatch.
+            </p>
+
+            <div className="form-actions" style={{ marginTop: '1rem' }}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={busy || (user?.role !== 'ADMIN' && !myWarehouse)}
+              >
+                {busy ? 'Processing on-chain...' : 'Confirm Acceptance (Sign on-chain)'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setAcceptModalRequest(null)}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Assign Driver & Vehicle Modal (Transport Officer / Admin) */}
+      {assignDriverModalRequest && (
+        <div className="card form" style={{ border: '2px solid #3498db', marginBottom: '2rem' }}>
+          <h3>Assign Driver & Vehicle</h3>
+          <p className="muted">
+            Request from <strong>{camps.find((c) => c.id === assignDriverModalRequest.campId)?.name ?? shortId(assignDriverModalRequest.campId)}</strong>
+            {assignDriverModalRequest.warehouseId && (
+              <> • Warehouse: <strong>{warehouses.find((w) => w.id === assignDriverModalRequest.warehouseId)?.name ?? shortId(assignDriverModalRequest.warehouseId)}</strong></>
+            )}
+          </p>
+
+          <form onSubmit={handleConfirmAssignDriver}>
+            <label>
+              Select Available Vehicle & Driver
+              <select value={selectedVehicleId} onChange={(e) => setSelectedVehicleId(e.target.value)} required>
+                <option value="">-- Choose Driver & Vehicle --</option>
+                {relevantVehiclesForAssign.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    Driver: {v.driverName || 'Incharge'} (ID: {v.driverId || 'N/A'}) — Vehicle: {v.registrationNumber} ({v.vehicleType || 'Truck'})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {relevantVehiclesForAssign.length === 0 && (
+              <p className="muted" style={{ color: '#e67e22', fontSize: '0.85rem' }}>
+                ⚠️ No active vehicles found. Please register vehicles under this warehouse or transport officer.
+              </p>
+            )}
+
+            <div className="form-actions" style={{ marginTop: '1rem' }}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={busy || !selectedVehicleId}
+              >
+                {busy ? 'Processing on-chain...' : 'Confirm Driver Assignment (Sign on-chain)'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setAssignDriverModalRequest(null)}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Create Request Form */}
       {showForm && (
         <form className="card form" onSubmit={submit}>
-          <h3>Create supply request</h3>
-          <div className="form-grid">
+          <h3>Create Supply Request</h3>
+
+          {user?.role === 'CAMP_MANAGER' ? (
+            <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#34495e', color: '#fff', borderRadius: '4px' }}>
+              <strong>Requesting For Camp: </strong>
+              {myCamp ? (
+                <span>
+                  {myCamp.name} {myCamp.location ? `(${myCamp.location})` : ''}
+                </span>
+              ) : (
+                <span style={{ color: '#e74c3c' }}>
+                  ⚠️ No Camp Assigned to your account. Contact Admin before requesting.
+                </span>
+              )}
+            </div>
+          ) : (
             <label>
               Camp
-              <select value={campId} onChange={(e) => setCampId(e.target.value)} required>
+              <select
+                value={adminSelectedCampId}
+                onChange={(e) => setAdminSelectedCampId(e.target.value)}
+                required
+              >
                 <option value="">Select camp</option>
                 {camps.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -360,33 +611,14 @@ export default function SupplyRequestsPage() {
                 ))}
               </select>
             </label>
-            <label>
-              Warehouse
-              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} required>
-                <option value="">Select warehouse</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Transport officer (assigned on accept)
-              <select value={transportId} onChange={(e) => setTransportId(e.target.value)}>
-                <option value="">Auto-select first transport officer</option>
-                {users.filter((u) => u.role === 'TRANSPORT_OFFICER').map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.fullName}
-                    {u.walletAddress ? '' : ' (no wallet)'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          )}
+
+          <p className="muted" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+            ℹ️ Requests are broadcast to all relief warehouses. Any available warehouse can accept this request and dispatch supplies.
+          </p>
 
           <div className="item-editor">
-            <h4>Items</h4>
+            <h4>Requested Relief Items</h4>
             {itemRows.map((row, idx) => (
               <div key={idx} className="item-row">
                 <select
@@ -397,18 +629,18 @@ export default function SupplyRequestsPage() {
                   }}
                   required
                 >
-                  <option value="">Item</option>
+                  <option value="">Select Item</option>
                   {items.map((i) => (
                     <option key={i.id} value={i.id}>
-                      {i.name}
+                      {i.name} ({i.category})
                     </option>
                   ))}
                 </select>
                 <input
                   type="number"
-                  min="0"
+                  min="0.1"
                   step="any"
-                  placeholder="Qty"
+                  placeholder="Quantity"
                   value={row.requestedQty}
                   onChange={(e) => updateItemRow(idx, { requestedQty: e.target.value })}
                   required
@@ -424,8 +656,11 @@ export default function SupplyRequestsPage() {
           </div>
 
           <div className="form-actions">
-            <button className="btn btn-primary" disabled={busy || !!pending}>
-              {busy ? 'Signing…' : 'Create (sign on-chain)'}
+            <button
+              className="btn btn-primary"
+              disabled={busy || !!pending || (user?.role === 'CAMP_MANAGER' && !myCamp)}
+            >
+              {busy ? 'Signing…' : 'Submit Request (Sign on-chain)'}
             </button>
             <button type="button" className="btn btn-outline" onClick={() => setShowForm(false)} disabled={busy}>
               Cancel
@@ -434,12 +669,16 @@ export default function SupplyRequestsPage() {
         </form>
       )}
 
+      {/* Requests List */}
       <div className="request-list">
         {requests.map((r) => {
           const availableActions = FLOW.filter(
-            (a) => a.from.includes(r.status) && a.roles.includes(role),
+            (a) => a.from.includes(r.status) && a.roles.includes(role)
           )
           const isPending = pending?.requestId === r.id
+          const campObj = camps.find((c) => c.id === r.campId)
+          const warehouseObj = warehouses.find((w) => w.id === r.warehouseId)
+
           return (
             <div key={r.id} className={`card request-card status-${r.status.toLowerCase()}`}>
               <div className="request-head">
@@ -454,17 +693,68 @@ export default function SupplyRequestsPage() {
                 </div>
                 <code className="cid">{shortId(r.id)}</code>
               </div>
-              <p className="muted">
-                Camp {camps.find((c) => c.id === r.campId)?.name ?? shortId(r.campId)} → Warehouse{' '}
-                {warehouses.find((w) => w.id === r.warehouseId)?.name ?? shortId(r.warehouseId)}
-              </p>
-              <ul className="plain-list">
+
+              <div style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+                <p style={{ margin: '0 0 0.25rem 0' }}>
+                  <strong>Camp: </strong> {campObj?.name ?? shortId(r.campId)}
+                </p>
+                <p style={{ margin: 0 }} className="muted">
+                  <strong>Warehouse: </strong>
+                  {warehouseObj ? (
+                    <span className="pill ok" style={{ fontSize: '0.8rem' }}>
+                      {warehouseObj.name}
+                    </span>
+                  ) : (
+                    <span className="pill" style={{ fontSize: '0.8rem', background: '#34495e', color: '#fff' }}>
+                      Open to Any Warehouse
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Driver & Warehouse Acceptance Details */}
+              {r.status !== 'CREATED' && r.status !== 'APPROVED' && (
+                <div
+                  style={{
+                    margin: '0.5rem 0',
+                    padding: '0.5rem 0.75rem',
+                    background: (r.assignedDriverName || r.assignedVehicleId) ? 'rgba(39, 174, 96, 0.1)' : 'rgba(243, 156, 18, 0.1)',
+                    borderRadius: '4px',
+                    borderLeft: (r.assignedDriverName || r.assignedVehicleId) ? '3px solid #27ae60' : '3px solid #f39c12',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  {warehouseObj && (
+                    <div>
+                      <strong>Fulfilling Warehouse: </strong> {warehouseObj.name}
+                    </div>
+                  )}
+                  {r.assignedDriverName ? (
+                    <div>
+                      <strong>Vehicle Incharge / Driver: </strong> {r.assignedDriverName} (ID: {r.assignedDriverId || '—'})
+                    </div>
+                  ) : (
+                    <div style={{ color: '#d35400', fontStyle: 'italic' }}>
+                      ⏳ Awaiting Vehicle & Driver Assignment by Transport Officer
+                    </div>
+                  )}
+                  {r.assignedVehicleId && (
+                    <div>
+                      <strong>Vehicle: </strong>{' '}
+                      {vehicles.find((v) => v.id === r.assignedVehicleId)?.registrationNumber || shortId(r.assignedVehicleId)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <ul className="plain-list" style={{ marginTop: '0.5rem' }}>
                 {r.items.map((it) => (
                   <li key={it.reliefItemId}>
                     {it.itemName || it.reliefItemId.slice(0, 8)} — {it.requestedQty}
                   </li>
                 ))}
               </ul>
+
               <div className="request-meta">
                 <span className="muted">{formatDate(r.updatedAt)}</span>
                 {r.txHashCreate && (
@@ -473,7 +763,9 @@ export default function SupplyRequestsPage() {
                   </code>
                 )}
               </div>
+
               {isPending && pending && <ActivePanel p={pending} />}
+
               {availableActions.length > 0 && (
                 <div className="request-actions">
                   {availableActions.map((a) => (

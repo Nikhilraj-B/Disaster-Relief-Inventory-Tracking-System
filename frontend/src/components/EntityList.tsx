@@ -117,6 +117,11 @@ export default function EntityList<T>({
                   onChange={(e) => setValue(field.name, e.target.value)}
                   required={field.required}
                 >
+                  <option value="">
+                    {field.options && field.options.length === 0
+                      ? `No ${field.label.toLowerCase()} available`
+                      : `-- Select ${field.label} --`}
+                  </option>
                   {field.options?.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}

@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/audit")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN')")
 public class AuditController extends EntityController<AuditRecord> {
 
     private final AuditService auditService;

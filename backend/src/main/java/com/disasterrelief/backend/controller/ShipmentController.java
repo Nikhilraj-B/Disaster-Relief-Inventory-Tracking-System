@@ -30,13 +30,13 @@ public class ShipmentController extends EntityController<Shipment> {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','TRANSPORT_OFFICER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','TRANSPORT_OFFICER','ADMIN')")
     public ResponseEntity<Shipment> create(Shipment entity) throws Exception {
         return super.create(entity);
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','TRANSPORT_OFFICER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','TRANSPORT_OFFICER','ADMIN')")
     public ResponseEntity<Shipment> update(String id, Shipment entity) throws Exception {
         return super.update(id, entity);
     }

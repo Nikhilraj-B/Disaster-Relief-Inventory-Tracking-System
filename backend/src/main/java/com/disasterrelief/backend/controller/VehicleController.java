@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class VehicleController extends EntityController<Vehicle> {
 
     private final VehicleService vehicleService;
+    private final com.disasterrelief.backend.store.UserStore userStore;
 
     @Override
     protected EntityService<Vehicle> service() {
@@ -22,13 +23,24 @@ public class VehicleController extends EntityController<Vehicle> {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN','WAREHOUSE_MANAGER','TRANSPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE_MANAGER','TRANSPORT_OFFICER')")
     public ResponseEntity<Vehicle> create(Vehicle entity) throws Exception {
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getName() != null) {
+            userStore.findByEmail(auth.getName()).ifPresent(u -> {
+                if (entity.getWarehouseId() == null && u.getFacilityId() != null) {
+                    entity.setWarehouseId(u.getFacilityId());
+                }
+                if (entity.getTransportOfficerUserId() == null) {
+                    entity.setTransportOfficerUserId(u.getId());
+                }
+            });
+        }
         return super.create(entity);
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN','WAREHOUSE_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE_MANAGER')")
     public ResponseEntity<Vehicle> update(String id, Vehicle entity) throws Exception {
         return super.update(id, entity);
     }

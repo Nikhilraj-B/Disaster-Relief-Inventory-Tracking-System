@@ -56,6 +56,8 @@ public class SupplyRequestService extends EntityService<SupplyRequest> {
     private final InventoryItemService inventoryItemService;
     private final EthereumService ethereumService;
     private final UserStore userStore;
+    private final ShipmentService shipmentService;
+    private final VehicleService vehicleService;
 
     public SupplyRequestService(DocumentStoreFactory factory,
                                 ApprovalService approvalService,
@@ -64,7 +66,9 @@ public class SupplyRequestService extends EntityService<SupplyRequest> {
                                 FacilityService facilityService,
                                 InventoryItemService inventoryItemService,
                                 EthereumService ethereumService,
-                                UserStore userStore) {
+                                UserStore userStore,
+                                ShipmentService shipmentService,
+                                VehicleService vehicleService) {
         super(factory, "supplyRequests", SupplyRequest.class);
         this.approvalService = approvalService;
         this.notificationService = notificationService;
@@ -73,12 +77,14 @@ public class SupplyRequestService extends EntityService<SupplyRequest> {
         this.inventoryItemService = inventoryItemService;
         this.ethereumService = ethereumService;
         this.userStore = userStore;
+        this.shipmentService = shipmentService;
+        this.vehicleService = vehicleService;
     }
 
     private static final Map<SupplyRequestStatus, SupplyRequestStatus> NEXT =
             Map.of(
                     SupplyRequestStatus.NONE, SupplyRequestStatus.CREATED,
-                    SupplyRequestStatus.CREATED, SupplyRequestStatus.APPROVED,
+                    SupplyRequestStatus.CREATED, SupplyRequestStatus.ACCEPTED,
                     SupplyRequestStatus.APPROVED, SupplyRequestStatus.ACCEPTED,
                     SupplyRequestStatus.ACCEPTED, SupplyRequestStatus.DISPATCHED,
                     SupplyRequestStatus.DISPATCHED, SupplyRequestStatus.IN_TRANSIT,
@@ -124,13 +130,13 @@ public class SupplyRequestService extends EntityService<SupplyRequest> {
      * Verifies the transaction against the contract and only then persists the
      * new status to IPFS. A fake / unrelated hash never changes the state.
      */
-    public SupplyRequest transitionBlockchain(String id, SupplyRequestStatus expectedFrom,
+    public SupplyRequest transitionBlockchain(String id, java.util.Set<SupplyRequestStatus> expectedFroms,
                                               SupplyRequestStatus to, BlockchainFunction function,
                                               String txHash) throws Exception {
         SupplyRequest request = get(id).orElseThrow(() -> new IllegalArgumentException("Request not found: " + id));
         SupplyRequestStatus current = request.getStatus() == null ? SupplyRequestStatus.NONE : request.getStatus();
-        if (current != expectedFrom) {
-            throw new IllegalStateException("Expected status " + expectedFrom + " but was " + current);
+        if (!expectedFroms.contains(current)) {
+            throw new IllegalStateException("Expected status in " + expectedFroms + " but was " + current);
         }
         String actorWallet = currentUserWallet();
         verify(txHash, function, request.getId(), actorWallet, to);
@@ -138,21 +144,34 @@ public class SupplyRequestService extends EntityService<SupplyRequest> {
         request.setUpdatedAt(LocalDateTime.now());
         request.getTxHashes().put(to.name(), txHash);
         store().save(id, request);
-        log.info("SupplyRequest {} {} -> {} verified on-chain", id, expectedFrom, to);
+        log.info("SupplyRequest {} {} -> {} verified on-chain", id, current, to);
         return request;
+    }
+
+    public SupplyRequest transitionBlockchain(String id, SupplyRequestStatus expectedFrom,
+                                              SupplyRequestStatus to, BlockchainFunction function,
+                                              String txHash) throws Exception {
+        return transitionBlockchain(id, java.util.Set.of(expectedFrom), to, function, txHash);
+    }
+
+    public SupplyRequest acceptBlockchain(String id, String txHashAccept, String txHashAssign,
+                                          String transporterWallet) throws Exception {
+        return acceptBlockchain(id, txHashAccept, txHashAssign, transporterWallet, null, null, null, null, null);
     }
 
     /**
      * Blockchain-verified accept: verifies the acceptRequest tx AND the
-     * assignTransporter tx (warehouse assigns the transport officer's wallet)
-     * before moving APPROVED -> ACCEPTED on IPFS.
+     * assignTransporter tx before moving APPROVED -> ACCEPTED on IPFS,
+     * recording the accepting warehouse and driver assignment.
      */
     public SupplyRequest acceptBlockchain(String id, String txHashAccept, String txHashAssign,
-                                          String transporterWallet) throws Exception {
+                                          String transporterWallet, String warehouseIdStr,
+                                          String vehicleIdStr, String driverName, String driverId,
+                                          String transporterUserIdStr) throws Exception {
         SupplyRequest request = get(id).orElseThrow(() -> new IllegalArgumentException("Request not found: " + id));
         SupplyRequestStatus current = request.getStatus() == null ? SupplyRequestStatus.NONE : request.getStatus();
-        if (current != SupplyRequestStatus.APPROVED) {
-            throw new IllegalStateException("Expected status APPROVED but was " + current);
+        if (current != SupplyRequestStatus.CREATED && current != SupplyRequestStatus.APPROVED) {
+            throw new IllegalStateException("Expected status CREATED or APPROVED but was " + current);
         }
         String actorWallet = currentUserWallet();
         verify(txHashAccept, BlockchainFunction.ACCEPT_REQUEST, request.getId(), actorWallet, SupplyRequestStatus.ACCEPTED);
@@ -170,11 +189,145 @@ public class SupplyRequestService extends EntityService<SupplyRequest> {
             }
             request.getTxHashes().put("ASSIGN_TRANSPORTER", txHashAssign);
         }
+
+        // Identify accepting manager and warehouse
+        String email = currentUserEmail();
+        User actingUser = email != null ? userStore.findByEmail(email).orElse(null) : null;
+        if (actingUser != null) {
+            request.setAcceptedByManagerId(actingUser.getId());
+        }
+
+        UUID warehouseId = null;
+        if (warehouseIdStr != null && !warehouseIdStr.isBlank()) {
+            warehouseId = UUID.fromString(warehouseIdStr);
+        } else if (actingUser != null && actingUser.getFacilityId() != null) {
+            warehouseId = actingUser.getFacilityId();
+        }
+        if (warehouseId != null) {
+            request.setWarehouseId(warehouseId);
+        }
+
+        UUID vehicleId = (vehicleIdStr != null && !vehicleIdStr.isBlank()) ? UUID.fromString(vehicleIdStr) : null;
+        UUID transporterUserId = (transporterUserIdStr != null && !transporterUserIdStr.isBlank()) ? UUID.fromString(transporterUserIdStr) : null;
+
+        if (vehicleId != null && vehicleService != null) {
+            var vOpt = vehicleService.get(vehicleId.toString());
+            if (vOpt.isPresent()) {
+                var v = vOpt.get();
+                if ((driverName == null || driverName.isBlank()) && v.getDriverName() != null) {
+                    driverName = v.getDriverName();
+                }
+                if ((driverId == null || driverId.isBlank()) && v.getDriverId() != null) {
+                    driverId = v.getDriverId();
+                }
+                if (transporterUserId == null && v.getTransportOfficerUserId() != null) {
+                    transporterUserId = v.getTransportOfficerUserId();
+                }
+            }
+        }
+
+        request.setAssignedVehicleId(vehicleId);
+        request.setAssignedDriverName(driverName);
+        request.setAssignedDriverId(driverId);
+        request.setAssignedTransporterId(transporterUserId);
+
+        // Record or update shipment
+        if (shipmentService != null && (vehicleId != null || transporterUserId != null)) {
+            try {
+                Optional<com.disasterrelief.backend.model.Shipment> existing = shipmentService.findBySupplyRequest(request.getId());
+                com.disasterrelief.backend.model.Shipment shipment = existing.orElseGet(() ->
+                        com.disasterrelief.backend.model.Shipment.builder().supplyRequestId(request.getId()).build());
+                if (vehicleId != null) shipment.setVehicleId(vehicleId);
+                if (transporterUserId != null) shipment.setTransporterUserId(transporterUserId);
+                if (existing.isPresent()) {
+                    shipmentService.update(shipment);
+                } else {
+                    shipmentService.create(shipment);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to create/update shipment on accept", e);
+            }
+        }
+
         request.setStatus(SupplyRequestStatus.ACCEPTED);
         request.setUpdatedAt(LocalDateTime.now());
         request.getTxHashes().put("ACCEPTED", txHashAccept);
         store().save(id, request);
-        log.info("SupplyRequest {} APPROVED -> ACCEPTED verified on-chain", id);
+        log.info("SupplyRequest {} {} -> ACCEPTED verified on-chain, warehouse: {}", id, current, warehouseId);
+        return request;
+    }
+
+    /**
+     * Transport Officer (or admin) assigns vehicle and driver to an already ACCEPTED supply request.
+     * Optionally records the on-chain assignTransporter transaction hash if provided.
+     */
+    public SupplyRequest assignDriver(String id, String txHashAssign, String transporterWallet,
+                                      String vehicleIdStr, String driverName, String driverId,
+                                      String transporterUserIdStr) throws Exception {
+        SupplyRequest request = get(id).orElseThrow(() -> new IllegalArgumentException("Request not found: " + id));
+        if (request.getStatus() != SupplyRequestStatus.ACCEPTED) {
+            throw new IllegalStateException("Driver can only be assigned to ACCEPTED requests, current status: " + request.getStatus());
+        }
+        String actorWallet = currentUserWallet();
+        if (txHashAssign != null && !txHashAssign.isBlank()) {
+            if (transporterWallet == null || transporterWallet.isBlank()) {
+                throw new EthereumVerificationException("assignTransporter txHash provided but transporterWallet missing");
+            }
+            VerificationResult assign = ethereumService.verify(txHashAssign,
+                    ethereumService.configuredContractAddress(), ethereumService.configuredChainId(),
+                    EthereumService.bytes32FromUuid(request.getId()), actorWallet,
+                    BlockchainFunction.ASSIGN_TRANSPORTER, SupplyRequestStatus.ACCEPTED.ordinal());
+            if (!transporterWallet.equalsIgnoreCase(assign.argAddress())) {
+                throw new EthereumVerificationException("assignTransporter assigned " + assign.argAddress()
+                        + " but expected transporter " + transporterWallet);
+            }
+            request.getTxHashes().put("ASSIGN_TRANSPORTER", txHashAssign);
+        }
+
+        UUID vehicleId = (vehicleIdStr != null && !vehicleIdStr.isBlank()) ? UUID.fromString(vehicleIdStr) : null;
+        UUID transporterUserId = (transporterUserIdStr != null && !transporterUserIdStr.isBlank()) ? UUID.fromString(transporterUserIdStr) : null;
+
+        if (vehicleId != null && vehicleService != null) {
+            var vOpt = vehicleService.get(vehicleId.toString());
+            if (vOpt.isPresent()) {
+                var v = vOpt.get();
+                if ((driverName == null || driverName.isBlank()) && v.getDriverName() != null) {
+                    driverName = v.getDriverName();
+                }
+                if ((driverId == null || driverId.isBlank()) && v.getDriverId() != null) {
+                    driverId = v.getDriverId();
+                }
+                if (transporterUserId == null && v.getTransportOfficerUserId() != null) {
+                    transporterUserId = v.getTransportOfficerUserId();
+                }
+            }
+        }
+
+        request.setAssignedVehicleId(vehicleId);
+        request.setAssignedDriverName(driverName);
+        request.setAssignedDriverId(driverId);
+        request.setAssignedTransporterId(transporterUserId);
+
+        if (shipmentService != null && (vehicleId != null || transporterUserId != null)) {
+            try {
+                Optional<com.disasterrelief.backend.model.Shipment> existing = shipmentService.findBySupplyRequest(request.getId());
+                com.disasterrelief.backend.model.Shipment shipment = existing.orElseGet(() ->
+                        com.disasterrelief.backend.model.Shipment.builder().supplyRequestId(request.getId()).build());
+                if (vehicleId != null) shipment.setVehicleId(vehicleId);
+                if (transporterUserId != null) shipment.setTransporterUserId(transporterUserId);
+                if (existing.isPresent()) {
+                    shipmentService.update(shipment);
+                } else {
+                    shipmentService.create(shipment);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to create/update shipment on assignDriver", e);
+            }
+        }
+
+        request.setUpdatedAt(LocalDateTime.now());
+        store().save(id, request);
+        log.info("SupplyRequest {} assigned driver {} and vehicle {}", id, driverName, vehicleId);
         return request;
     }
 

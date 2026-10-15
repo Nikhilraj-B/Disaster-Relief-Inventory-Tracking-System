@@ -6,21 +6,15 @@ interface AuthContextValue {
   token: string | null
   user: AuthResponse | null
   login: (email: string, password: string) => Promise<void>
-  register: (data: {
-    email: string
-    password: string
-    fullName: string
-    role: string
-    walletAddress?: string
-  }) => Promise<void>
-  linkWallet: (walletAddress: string) => Promise<void>
+  register: (data: any) => Promise<void>
+
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 function loadUser(): AuthResponse | null {
-  const raw = localStorage.getItem('dr_user')
+  const raw = sessionStorage.getItem('dr_user')
   if (!raw) return null
   try {
     return JSON.parse(raw) as AuthResponse
@@ -35,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const persist = (res: AuthResponse) => {
     setToken(res.token)
-    localStorage.setItem('dr_user', JSON.stringify(res))
+    sessionStorage.setItem('dr_user', JSON.stringify(res))
     setTokenState(res.token)
     setUser(res)
   }
@@ -45,32 +39,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist(res)
   }
 
-  const register = async (data: {
-    email: string
-    password: string
-    fullName: string
-    role: string
-    walletAddress?: string
-  }) => {
+  const register = async (data: any) => {
     const res = await api.post<AuthResponse>('/auth/register', data)
-    persist(res)
-  }
-
-  /** Links the authenticated account to a connected MetaMask wallet (server returns updated user). */
-  const linkWallet = async (walletAddress: string) => {
-    const res = await api.put<AuthResponse>('/users/me/wallet', { walletAddress })
     persist(res)
   }
 
   const logout = () => {
     clearToken()
-    localStorage.removeItem('dr_user')
+    sessionStorage.removeItem('dr_user')
     setTokenState(null)
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, login, register, linkWallet, logout }}>
+    <AuthContext.Provider value={{ token, user, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )

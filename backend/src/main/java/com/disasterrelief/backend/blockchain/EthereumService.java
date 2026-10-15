@@ -180,6 +180,43 @@ public class EthereumService {
         return new BigInteger(statusWord, 16).intValue();
     }
 
+    /**
+     * Checks if the given wallet address has the given role on-chain.
+     * Role names: "ADMIN_ROLE", "WAREHOUSE_ROLE", "CAMP_ROLE", "TRANSPORT_ROLE"
+     */
+    public boolean hasRole(String roleName, String walletAddress) {
+        if (walletAddress == null || walletAddress.isBlank()) {
+            return false;
+        }
+        try {
+            String roleBytes32;
+            switch (roleName) {
+                case "ADMIN_ROLE": roleBytes32 = "a49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775"; break;
+                case "WAREHOUSE_ROLE": roleBytes32 = "b7a3b4e135e3cc95d436a578bc57d23d9200427ecfa9794bfa29cbdd7d36329a"; break;
+                case "CAMP_ROLE": roleBytes32 = "3986c757c24aebbcbe86adad2488a10ccdae24f4e7d446df6fc197b137d6e6ab"; break;
+                case "TRANSPORT_ROLE": roleBytes32 = "7a83d460d3fc144edfc8bc2ef3222e96abce8e0018d4df7148006e8bd2d2875b"; break;
+                default: return false;
+            }
+            
+            // Selector for hasRole(bytes32,address) is 0x91d14854
+            String walletPadded = walletAddress.toLowerCase(Locale.ROOT).replace("0x", "");
+            walletPadded = "0".repeat(64 - walletPadded.length()) + walletPadded;
+            
+            String data = "0x91d14854" + roleBytes32 + walletPadded;
+            JsonNode result = rpc("eth_call", List.of(
+                    MapOf("to", contractAddress, "data", data), "latest"));
+            
+            if (result == null || result.isNull()) {
+                return false;
+            }
+            String hex = result.asText("").replace("0x", "");
+            return !hex.isEmpty() && !new BigInteger(hex, 16).equals(BigInteger.ZERO);
+        } catch (Exception e) {
+            log.error("Failed to verify on-chain role", e);
+            return false;
+        }
+    }
+
     /** Returns the node's current chain id via eth_chainId. */
     public long getChainId() throws IOException, InterruptedException {
         JsonNode result = rpc("eth_chainId", List.of());

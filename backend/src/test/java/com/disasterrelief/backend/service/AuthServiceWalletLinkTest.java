@@ -54,7 +54,7 @@ class AuthServiceWalletLinkTest {
         };
         AuthenticationManager authenticationManager = auth -> auth;
 
-        authService = new AuthService(userStore, new BCryptPasswordEncoder(), jwtUtil, authenticationManager);
+        authService = new AuthService(userStore, new BCryptPasswordEncoder(), jwtUtil, authenticationManager, null);
     }
 
     @AfterEach

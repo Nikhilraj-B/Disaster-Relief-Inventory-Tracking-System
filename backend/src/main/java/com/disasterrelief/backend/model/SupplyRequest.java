@@ -41,6 +41,11 @@ public class SupplyRequest implements HasCid {
     @Builder.Default
     private List<RequestItem> items = new ArrayList<>();
     private UUID createdBy;
+    private UUID acceptedByManagerId;
+    private UUID assignedVehicleId;
+    private String assignedDriverName;
+    private String assignedDriverId;
+    private UUID assignedTransporterId;
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
     @Builder.Default

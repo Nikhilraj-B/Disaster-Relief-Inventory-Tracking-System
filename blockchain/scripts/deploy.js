@@ -21,6 +21,10 @@ async function main() {
 
   const adminTx = await contract.grantRole(ADMIN_ROLE, admin.address);
   await adminTx.wait();
+  if (deployer.address.toLowerCase() !== admin.address.toLowerCase()) {
+    const deployerAdminTx = await contract.grantRole(ADMIN_ROLE, deployer.address);
+    await deployerAdminTx.wait();
+  }
   const warehouseTx = await contract.grantRole(WAREHOUSE_ROLE, warehouse.address);
   await warehouseTx.wait();
   const campTx = await contract.grantRole(CAMP_ROLE, camp.address);

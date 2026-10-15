@@ -6,6 +6,8 @@ import com.disasterrelief.backend.service.InventoryTransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,8 +24,9 @@ public class InventoryTransactionController extends EntityController<InventoryTr
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','GOVERNMENT_ADMIN')")
-    public ResponseEntity<InventoryTransaction> create(InventoryTransaction entity) throws Exception {
+    @PostMapping
+    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','CAMP_MANAGER','ADMIN')")
+    public ResponseEntity<InventoryTransaction> create(@RequestBody InventoryTransaction entity) throws Exception {
         return super.create(entity);
     }
 }

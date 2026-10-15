@@ -241,4 +241,14 @@ export const blockchain = {
       }
     })
   },
+  grantRole: (roleName: string, targetWallet: string, actor: string) => {
+    let roleBytes = ''
+    switch (roleName) {
+      case "ADMIN": roleBytes = "0xa49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775"; break;
+      case "WAREHOUSE_MANAGER": roleBytes = "0xb7a3b4e135e3cc95d436a578bc57d23d9200427ecfa9794bfa29cbdd7d36329a"; break;
+      case "CAMP_MANAGER": roleBytes = "0x3986c757c24aebbcbe86adad2488a10ccdae24f4e7d446df6fc197b137d6e6ab"; break;
+      case "TRANSPORT_OFFICER": roleBytes = "0x7a83d460d3fc144edfc8bc2ef3222e96abce8e0018d4df7148006e8bd2d2875b"; break;
+    }
+    return sign('grantRole', [roleBytes, targetWallet], actor)
+  },
 }

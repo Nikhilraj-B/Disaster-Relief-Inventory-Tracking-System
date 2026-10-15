@@ -1,0 +1,88 @@
+Required Tools
+
+To run this project on a new laptop, you'll need to set up the necessary tools and run each part of this hybrid Web2/Web3 application. Here is the step-by-step procedure tailored for Windows.
+
+Step 1: Install Prerequisites
+Before you begin, ensure you have the following software installed on the new laptop:
+
+Git: To clone your repository.
+Node.js (LTS version): Required for the React frontend and Hardhat blockchain environment.
+Java Development Kit (JDK) (Version 17 or higher): Required for the Spring Boot backend.
+Python (Version 3.8+): Required for the Machine Learning (FastAPI) environment.
+IPFS Kubo: Required as the decentralized database. Follow the instructions to install and add it to your system's PATH.
+Step 2: Clone and Configure the Repository
+Open a terminal (Command Prompt or PowerShell) and run:
+
+bash
+git clone <your-github-repo-url>
+cd <your-repo-folder-name>
+# Copy the example environment variables (if required)
+copy .env.example .env
+(Note: You don't need to configure PostgreSQL in the .env since the backend has been migrated to use IPFS.)
+
+Step 3: Start the Required Services
+You will need to open 5 separate terminal windows, as each service must run simultaneously in the background. Run them in the following order:
+
+1. Start IPFS (Terminal 1)
+The Spring Boot backend relies on IPFS to function as its database. It must be running first.
+
+bash
+# Run this if it's the very first time you are using IPFS on the new laptop
+ipfs init
+# Start the IPFS daemon
+ipfs daemon
+Wait until it says "Daemon is ready".
+
+2. Start the Blockchain Node (Terminal 2)
+This sets up a local Ethereum network (Hardhat).
+
+bash
+cd blockchain
+npm install
+npx hardhat node
+Keep this terminal open to maintain the local blockchain network.
+
+3. Deploy Smart Contracts (Terminal 3)
+Deploy your smart contract to the local Hardhat node you just started.
+
+bash
+cd blockchain
+npx hardhat run scripts/deploy.js --network localhost
+(If the output provides a new deployed contract address, you may need to update the ETH_CONTRACT_ADDRESS in backend/src/main/resources/application.properties, though it defaults to 0x5FbDB2315678afecb367f032d93F642f64180aa3 which is standard for local Hardhat).
+
+4. Start the Machine Learning API (Terminal 4)
+This starts the Python FastAPI server.
+
+bash
+cd ml
+# Create a virtual environment
+python -m venv venv
+# Activate it (Windows specific command)
+venv\Scripts\activate
+# Install dependencies and run
+pip install -r requirements.txt
+uvicorn main:app --reload
+5. Start the Backend (Terminal 5)
+This starts the Spring Boot Java server. Make sure IPFS and the ML server are already running.
+
+bash
+cd backend
+# Use the maven wrapper to run the application
+.\mvnw.cmd spring-boot:run
+6. Start the Frontend (Terminal 6)
+Finally, start the React application.
+
+bash
+cd frontend
+npm install
+npm run dev
+Step 4: Access the Application
+Once all services are running, open your browser and navigate to: http://localhost:5173
+
+Troubleshooting Ports on the New Laptop: Ensure no other applications are using the following ports:
+
+5001 / 8080 (IPFS)
+8081 (Spring Boot Backend)
+8000 (Python ML Server)
+8545 (Hardhat Node)
+5173 (React Frontend)

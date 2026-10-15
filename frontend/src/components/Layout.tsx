@@ -11,16 +11,18 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER', 'TRANSPORT_OFFICER', 'NGO_COORDINATOR'] },
-  { to: '/organizations', label: 'Organizations', roles: ['GOVERNMENT_ADMIN', 'NGO_COORDINATOR'] },
-  { to: '/facilities', label: 'Facilities', roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER'] },
-  { to: '/relief-items', label: 'Relief Items', roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER', 'NGO_COORDINATOR'] },
-  { to: '/inventory', label: 'Inventory', roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER'] },
-  { to: '/vehicles', label: 'Vehicles', roles: ['GOVERNMENT_ADMIN', 'TRANSPORT_OFFICER'] },
-  { to: '/supply-requests', label: 'Supply Requests', roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER', 'TRANSPORT_OFFICER'] },
-  { to: '/shipments', label: 'Shipments', roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER', 'TRANSPORT_OFFICER'] },
-  { to: '/audit', label: 'Audit Trail', roles: ['GOVERNMENT_ADMIN'] },
-  { to: '/notifications', label: 'Notifications', roles: ['GOVERNMENT_ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER', 'TRANSPORT_OFFICER', 'NGO_COORDINATOR'] },
+  { to: '/admin', label: 'Dashboard', roles: ['ADMIN'] },
+  { to: '/camp-manager', label: 'Dashboard', roles: ['CAMP_MANAGER'] },
+  { to: '/warehouse-manager', label: 'Dashboard', roles: ['WAREHOUSE_MANAGER'] },
+  { to: '/transport-officer', label: 'Dashboard', roles: ['TRANSPORT_OFFICER'] },
+  { to: '/facilities', label: 'Facilities', roles: ['ADMIN'] },
+  { to: '/relief-items', label: 'Relief Items', roles: ['ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER'] },
+  { to: '/inventory', label: 'Inventory', roles: ['ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER'] },
+  { to: '/vehicles', label: 'Vehicles', roles: ['ADMIN', 'TRANSPORT_OFFICER'] },
+  { to: '/supply-requests', label: 'Supply Requests', roles: ['ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER', 'TRANSPORT_OFFICER'] },
+  { to: '/shipments', label: 'Shipments', roles: ['ADMIN', 'WAREHOUSE_MANAGER', 'TRANSPORT_OFFICER'] },
+  { to: '/audit', label: 'Audit Trail', roles: ['ADMIN'] },
+  { to: '/notifications', label: 'Notifications', roles: ['ADMIN', 'WAREHOUSE_MANAGER', 'CAMP_MANAGER', 'TRANSPORT_OFFICER'] },
 ]
 
 export default function Layout() {

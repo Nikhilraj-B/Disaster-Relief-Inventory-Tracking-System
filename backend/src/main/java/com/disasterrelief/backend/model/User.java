@@ -44,6 +44,9 @@ public class User implements UserDetails {
 
     private String fullName;
 
+    /** Facility (Camp or Warehouse) to which this user is assigned. */
+    private UUID facilityId;
+
     @Builder.Default
     private boolean enabled = true;
 

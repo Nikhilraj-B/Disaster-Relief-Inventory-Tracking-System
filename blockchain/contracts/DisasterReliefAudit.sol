@@ -84,7 +84,6 @@ contract DisasterReliefAudit is AccessControl {
         onlyRole(CAMP_ROLE)
         validStatus(requestId, RequestStatus.NONE)
     {
-        require(warehouseWallet != address(0), "warehouse cannot be zero");
         SupplyRequestRecord storage r = supplyRequests[requestId];
         r.requestId = requestId;
         r.campWallet = msg.sender;
@@ -126,7 +125,9 @@ contract DisasterReliefAudit is AccessControl {
 
     function _reject(bytes32 requestId) private {
         if (hasRole(WAREHOUSE_ROLE, msg.sender)) {
-            require(msg.sender == supplyRequests[requestId].warehouseWallet, "warehouse mismatch");
+            if (supplyRequests[requestId].warehouseWallet != address(0)) {
+                require(msg.sender == supplyRequests[requestId].warehouseWallet, "warehouse mismatch");
+            }
         } else {
             require(hasRole(ADMIN_ROLE, msg.sender), "not authorized");
         }
@@ -135,86 +136,132 @@ contract DisasterReliefAudit is AccessControl {
         emit RequestRejected(requestId, msg.sender, block.timestamp);
     }
 
-    /** @dev WAREHOUSE accepts: APPROVED -> ACCEPTED. Caller must be warehouseWallet. */
+    /** @dev WAREHOUSE accepts: CREATED or APPROVED -> ACCEPTED. Caller must be warehouseWallet or claims warehouse if unassigned. */
     function acceptRequest(bytes32 requestId)
         external
-        onlyRole(WAREHOUSE_ROLE)
-        validStatus(requestId, RequestStatus.APPROVED)
     {
-        require(msg.sender == supplyRequests[requestId].warehouseWallet, "warehouse mismatch");
+        require(
+            hasRole(WAREHOUSE_ROLE, msg.sender) || hasRole(ADMIN_ROLE, msg.sender),
+            "not authorized to accept"
+        );
+        require(
+            supplyRequests[requestId].status == RequestStatus.CREATED ||
+            supplyRequests[requestId].status == RequestStatus.APPROVED,
+            "invalid current status"
+        );
+        if (supplyRequests[requestId].warehouseWallet == address(0)) {
+            supplyRequests[requestId].warehouseWallet = msg.sender;
+        } else {
+            require(
+                msg.sender == supplyRequests[requestId].warehouseWallet || hasRole(ADMIN_ROLE, msg.sender),
+                "warehouse mismatch"
+            );
+        }
         supplyRequests[requestId].status = RequestStatus.ACCEPTED;
         supplyRequests[requestId].updatedAt = block.timestamp;
         emit RequestAccepted(requestId, msg.sender, block.timestamp);
     }
 
-    /** @dev WAREHOUSE assigns a transporter: ACCEPTED -> ACCEPTED (status unchanged). */
+    /** @dev TRANSPORT, WAREHOUSE, or ADMIN assigns a transporter: ACCEPTED -> ACCEPTED (status unchanged). */
     function assignTransporter(bytes32 requestId, address transporterWallet)
         external
-        onlyRole(WAREHOUSE_ROLE)
         validStatus(requestId, RequestStatus.ACCEPTED)
     {
-        require(msg.sender == supplyRequests[requestId].warehouseWallet, "warehouse mismatch");
+        require(
+            hasRole(TRANSPORT_ROLE, msg.sender) ||
+            hasRole(WAREHOUSE_ROLE, msg.sender) ||
+            hasRole(ADMIN_ROLE, msg.sender),
+            "not authorized to assign transporter"
+        );
         require(transporterWallet != address(0), "transporter cannot be zero");
         supplyRequests[requestId].transporterWallet = transporterWallet;
         supplyRequests[requestId].updatedAt = block.timestamp;
         emit TransporterAssigned(requestId, transporterWallet, block.timestamp);
     }
 
-    /** @dev TRANSPORT dispatches: ACCEPTED -> DISPATCHED. Caller must be transporterWallet. */
+    /** @dev TRANSPORT or WAREHOUSE dispatches: ACCEPTED -> DISPATCHED. */
     function dispatchRequest(bytes32 requestId)
         external
-        onlyRole(TRANSPORT_ROLE)
         validStatus(requestId, RequestStatus.ACCEPTED)
     {
-        require(msg.sender == supplyRequests[requestId].transporterWallet, "transporter mismatch");
+        require(
+            hasRole(TRANSPORT_ROLE, msg.sender) ||
+            hasRole(WAREHOUSE_ROLE, msg.sender) ||
+            hasRole(ADMIN_ROLE, msg.sender),
+            "not authorized to dispatch"
+        );
+        if (hasRole(TRANSPORT_ROLE, msg.sender) && supplyRequests[requestId].transporterWallet != address(0)) {
+            require(
+                msg.sender == supplyRequests[requestId].transporterWallet ||
+                hasRole(WAREHOUSE_ROLE, msg.sender) ||
+                hasRole(ADMIN_ROLE, msg.sender),
+                "transporter mismatch"
+            );
+        }
         supplyRequests[requestId].status = RequestStatus.DISPATCHED;
         supplyRequests[requestId].updatedAt = block.timestamp;
         emit RequestDispatched(requestId, msg.sender, block.timestamp);
     }
 
-    /** @dev TRANSPORT marks in transit: DISPATCHED -> IN_TRANSIT. */
+    /** @dev TRANSPORT or WAREHOUSE marks in transit: DISPATCHED -> IN_TRANSIT. */
     function markInTransit(bytes32 requestId)
         external
-        onlyRole(TRANSPORT_ROLE)
         validStatus(requestId, RequestStatus.DISPATCHED)
     {
-        require(msg.sender == supplyRequests[requestId].transporterWallet, "transporter mismatch");
+        require(
+            hasRole(TRANSPORT_ROLE, msg.sender) ||
+            hasRole(WAREHOUSE_ROLE, msg.sender) ||
+            hasRole(ADMIN_ROLE, msg.sender),
+            "not authorized"
+        );
         supplyRequests[requestId].status = RequestStatus.IN_TRANSIT;
         supplyRequests[requestId].updatedAt = block.timestamp;
         emit RequestInTransit(requestId, msg.sender, block.timestamp);
     }
 
-    /** @dev TRANSPORT marks arrived: IN_TRANSIT -> ARRIVED. */
+    /** @dev TRANSPORT or WAREHOUSE marks arrived: IN_TRANSIT -> ARRIVED. */
     function markArrived(bytes32 requestId)
         external
-        onlyRole(TRANSPORT_ROLE)
         validStatus(requestId, RequestStatus.IN_TRANSIT)
     {
-        require(msg.sender == supplyRequests[requestId].transporterWallet, "transporter mismatch");
+        require(
+            hasRole(TRANSPORT_ROLE, msg.sender) ||
+            hasRole(WAREHOUSE_ROLE, msg.sender) ||
+            hasRole(ADMIN_ROLE, msg.sender),
+            "not authorized"
+        );
         supplyRequests[requestId].status = RequestStatus.ARRIVED;
         supplyRequests[requestId].updatedAt = block.timestamp;
         emit RequestArrived(requestId, msg.sender, block.timestamp);
     }
 
-    /** @dev CAMP receives: ARRIVED -> RECEIVED. Caller must be original campWallet. */
+    /** @dev CAMP receives: IN_TRANSIT or ARRIVED -> RECEIVED. Caller must be original campWallet. */
     function receiveRequest(bytes32 requestId)
         external
         onlyRole(CAMP_ROLE)
-        validStatus(requestId, RequestStatus.ARRIVED)
     {
+        require(
+            supplyRequests[requestId].status == RequestStatus.IN_TRANSIT ||
+            supplyRequests[requestId].status == RequestStatus.ARRIVED,
+            "invalid current status"
+        );
         require(msg.sender == supplyRequests[requestId].campWallet, "camp mismatch");
         supplyRequests[requestId].status = RequestStatus.RECEIVED;
         supplyRequests[requestId].updatedAt = block.timestamp;
         emit RequestReceived(requestId, msg.sender, block.timestamp);
     }
 
-    /** @dev CAMP completes: RECEIVED -> COMPLETED. Caller must be original campWallet. */
+    /** @dev TRANSPORT, CAMP or ADMIN completes (vehicle returned to warehouse): RECEIVED -> COMPLETED. */
     function completeRequest(bytes32 requestId)
         external
-        onlyRole(CAMP_ROLE)
         validStatus(requestId, RequestStatus.RECEIVED)
     {
-        require(msg.sender == supplyRequests[requestId].campWallet, "camp mismatch");
+        require(
+            hasRole(TRANSPORT_ROLE, msg.sender) ||
+            hasRole(CAMP_ROLE, msg.sender) ||
+            hasRole(ADMIN_ROLE, msg.sender),
+            "not authorized"
+        );
         supplyRequests[requestId].status = RequestStatus.COMPLETED;
         supplyRequests[requestId].updatedAt = block.timestamp;
         emit RequestCompleted(requestId, msg.sender, block.timestamp);

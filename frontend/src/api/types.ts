@@ -1,8 +1,7 @@
 export type Role =
-  | 'GOVERNMENT_ADMIN'
+  | 'ADMIN'
   | 'WAREHOUSE_MANAGER'
   | 'CAMP_MANAGER'
-  | 'NGO_COORDINATOR'
   | 'TRANSPORT_OFFICER'
 
 export type FacilityType = 'WAREHOUSE' | 'CAMP'
@@ -21,6 +20,7 @@ export interface AuthResponse {
   fullName: string
   role: Role
   walletAddress?: string
+  facilityId?: string
 }
 
 export interface User {
@@ -29,6 +29,7 @@ export interface User {
   role: Role
   walletAddress?: string
   fullName: string
+  facilityId?: string
   enabled: boolean
   createdAt: string
   updatedAt: string
@@ -83,11 +84,14 @@ export interface InventoryItem {
 
 export interface InventoryTransaction {
   id: string
-  facilityId: string
-  reliefItemId: string
-  type: string
+  facilityId?: string
+  inventoryItemId?: string
+  reliefItemId?: string
+  type?: string
+  transactionType?: 'ADD' | 'SUBTRACT' | 'RESERVE' | 'RELEASE'
   quantity: number
   userId?: string
+  referenceType?: string
   createdAt: string
   cid?: string
 }
@@ -95,9 +99,13 @@ export interface InventoryTransaction {
 export interface Vehicle {
   id: string
   organizationId: string
+  warehouseId?: string
+  transportOfficerUserId?: string
   registrationNumber: string
   vehicleType?: string
   capacityKg?: number
+  driverName?: string
+  driverId?: string
   active: boolean
   cid?: string
 }
@@ -107,6 +115,8 @@ export interface Shipment {
   supplyRequestId: string
   transporterUserId?: string
   vehicleId?: string
+  driverName?: string
+  driverId?: string
   dispatchTime?: string
   arrivalTime?: string
   txHashDispatch?: string
@@ -124,7 +134,7 @@ export interface RequestItem {
 export interface SupplyRequest {
   id: string
   campId: string
-  warehouseId: string
+  warehouseId?: string
   status: SupplyRequestStatus
   mlClassification?: MlClassification
   mlConfidence?: number
@@ -133,6 +143,11 @@ export interface SupplyRequest {
   txHashes?: Record<string, string>
   items: RequestItem[]
   createdBy?: string
+  acceptedByManagerId?: string
+  assignedVehicleId?: string
+  assignedDriverName?: string
+  assignedDriverId?: string
+  assignedTransporterId?: string
   createdAt: string
   updatedAt: string
   cid?: string

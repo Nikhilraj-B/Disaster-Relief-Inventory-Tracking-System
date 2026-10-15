@@ -63,13 +63,15 @@ export default function DashboardPage() {
       </p>
 
       <div className="stat-grid">
+        {user?.role === 'ADMIN' && (
+          <div className="stat-card">
+            <span className="stat-value">{counts.facilities}</span>
+            <span className="stat-label">Facilities</span>
+          </div>
+        )}
         <div className="stat-card">
           <span className="stat-value">{counts.orgs}</span>
           <span className="stat-label">Organizations</span>
-        </div>
-        <div className="stat-card">
-          <span className="stat-value">{counts.facilities}</span>
-          <span className="stat-label">Facilities</span>
         </div>
         <div className="stat-card">
           <span className="stat-value">{counts.items}</span>
@@ -94,17 +96,78 @@ export default function DashboardPage() {
           </ul>
         </div>
 
-        <div className="card">
-          <h3>Recent facilities</h3>
-          <ul className="plain-list">
-            {facilities.slice(0, 5).map((f) => (
-              <li key={f.id}>
-                <strong>{f.name}</strong> <span className="muted">({f.type})</span>
-              </li>
-            ))}
-            {facilities.length === 0 && <li className="muted">None yet</li>}
-          </ul>
-        </div>
+        {user?.role === 'ADMIN' && (
+          <div className="card">
+            <h3>Recent facilities</h3>
+            <ul className="plain-list">
+              {facilities.slice(0, 5).map((f) => (
+                <li key={f.id}>
+                  <strong>{f.name}</strong> <span className="muted">({f.type})</span>
+                </li>
+              ))}
+              {facilities.length === 0 && <li className="muted">None yet</li>}
+            </ul>
+          </div>
+        )}
+
+        {user?.role === 'CAMP_MANAGER' && (() => {
+          const myCamp = facilities.find((f) => f.id === user.facilityId || f.managerUserId === user.userId)
+          return (
+            <div className="card">
+              <h3>My Assigned Camp</h3>
+              {myCamp ? (
+                <div>
+                  <p><strong>{myCamp.name}</strong></p>
+                  <p className="muted">Location: {myCamp.location || 'Not specified'}</p>
+                  <p className="muted">Population: {myCamp.population ?? 0} / Max Capacity: {myCamp.maxCapacity ?? 'N/A'}</p>
+                </div>
+              ) : (
+                <p className="muted" style={{ color: 'var(--color-warning, #e67e22)' }}>
+                  ⚠️ No camp assigned yet. Please contact an Administrator to assign you to a camp.
+                </p>
+              )}
+            </div>
+          )
+        })()}
+
+        {user?.role === 'WAREHOUSE_MANAGER' && (() => {
+          const myWarehouse = facilities.find((f) => f.id === user.facilityId || f.managerUserId === user.userId)
+          return (
+            <div className="card">
+              <h3>My Assigned Warehouse</h3>
+              {myWarehouse ? (
+                <div>
+                  <p><strong>{myWarehouse.name}</strong></p>
+                  <p className="muted">Location: {myWarehouse.location || 'Not specified'}</p>
+                  <p className="muted">Capacity: {myWarehouse.capacitySqm ? `${myWarehouse.capacitySqm} sq.m` : 'N/A'}</p>
+                </div>
+              ) : (
+                <p className="muted" style={{ color: 'var(--color-warning, #e67e22)' }}>
+                  ⚠️ No warehouse assigned yet. Please contact an Administrator to assign you to a warehouse.
+                </p>
+              )}
+            </div>
+          )
+        })()}
+
+        {user?.role === 'TRANSPORT_OFFICER' && (() => {
+          const myWarehouse = facilities.find((f) => f.id === user.facilityId)
+          return (
+            <div className="card">
+              <h3>Assigned Warehouse</h3>
+              {myWarehouse ? (
+                <div>
+                  <p><strong>{myWarehouse.name}</strong></p>
+                  <p className="muted">Location: {myWarehouse.location || 'Not specified'}</p>
+                </div>
+              ) : (
+                <p className="muted" style={{ color: 'var(--color-warning, #e67e22)' }}>
+                  ⚠️ Not assigned to any warehouse yet. Please contact an Administrator.
+                </p>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <div className="grid-2">

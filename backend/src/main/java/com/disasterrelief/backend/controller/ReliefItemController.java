@@ -22,13 +22,13 @@ public class ReliefItemController extends EntityController<ReliefItem> {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN','WAREHOUSE_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE_MANAGER')")
     public ResponseEntity<ReliefItem> create(ReliefItem entity) throws Exception {
         return super.create(entity);
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN','WAREHOUSE_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE_MANAGER')")
     public ResponseEntity<ReliefItem> update(String id, ReliefItem entity) throws Exception {
         return super.update(id, entity);
     }

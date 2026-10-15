@@ -6,9 +6,8 @@ package com.disasterrelief.backend.model;
  * They are SEPARATE from the blockchain roles managed by the smart contract.
  */
 public enum Role {
-    GOVERNMENT_ADMIN,
+    ADMIN,
     WAREHOUSE_MANAGER,
     CAMP_MANAGER,
-    NGO_COORDINATOR,
     TRANSPORT_OFFICER
 }

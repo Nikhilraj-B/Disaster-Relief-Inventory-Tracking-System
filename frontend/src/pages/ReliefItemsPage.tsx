@@ -25,6 +25,7 @@ export default function ReliefItemsPage() {
       basePath="/relief-items"
       fields={FIELDS}
       emptyCreate={{ category: 'FOOD' }}
+      canDelete
       columns={[
         { header: 'Name', render: (i) => <strong>{i.name}</strong> },
         { header: 'Category', render: (i) => <span className={`pill cat-${i.category.toLowerCase()}`}>{i.category}</span> },

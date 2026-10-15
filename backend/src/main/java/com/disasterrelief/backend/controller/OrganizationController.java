@@ -22,19 +22,19 @@ public class OrganizationController extends EntityController<Organization> {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<Organization> create(Organization entity) throws Exception {
         return super.create(entity);
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<Organization> update(String id, Organization entity) throws Exception {
         return super.update(id, entity);
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<Void> delete(String id) throws Exception {
         return super.delete(id);
     }

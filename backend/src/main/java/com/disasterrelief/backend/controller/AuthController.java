@@ -27,8 +27,7 @@ public class AuthController {
 
     /**
      * POST /api/auth/register
-     * Registers a new user. In production, this endpoint should be restricted
-     * to GOVERNMENT_ADMIN or protected by an invitation mechanism.
+     * Registers a new user and returns a JWT.
      */
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {

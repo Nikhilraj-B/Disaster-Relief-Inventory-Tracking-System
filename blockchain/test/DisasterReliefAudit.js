@@ -74,14 +74,35 @@ describe("DisasterReliefAudit", function () {
   it("rejects invalid transitions", async function () {
     const id = bytes32("req-004");
     await contract.connect(camp).createRequest(id, warehouse.address);
-    await expect(contract.connect(admin).acceptRequest(id)).to.revert(ethers);
+    await expect(contract.connect(transporter).dispatchRequest(id)).to.revert(ethers);
   });
 
-  it("allows rejection from CREATED by admin", async function () {
-    const id = bytes32("req-005");
+  it("allows open request creation with address(0) and direct acceptance by warehouse without admin approval", async function () {
+    const id = bytes32("req-006");
+    await contract.connect(camp).createRequest(id, ethers.ZeroAddress);
+    // Direct accept without approveRequest:
+    await contract.connect(warehouse).acceptRequest(id);
+    const [, ww, , status] = await contract.getRequest(id);
+    expect(ww).to.equal(warehouse.address);
+    expect(status).to.equal(3n); // ACCEPTED
+  });
+
+  it("allows camp manager to receive directly from IN_TRANSIT and transporter to complete when vehicle returns", async function () {
+    const id = bytes32("req-008");
     await contract.connect(camp).createRequest(id, warehouse.address);
-    await contract.connect(admin).rejectRequest(id);
-    const [, , , status] = await contract.getRequest(id);
-    expect(status).to.equal(9n); // REJECTED
+    await contract.connect(warehouse).acceptRequest(id);
+    await contract.connect(transporter).assignTransporter(id, transporter.address);
+    await contract.connect(transporter).dispatchRequest(id);
+    await contract.connect(transporter).markInTransit(id);
+    // Directly receive from IN_TRANSIT:
+    await contract.connect(camp).receiveRequest(id);
+    let [, , , status] = await contract.getRequest(id);
+    expect(status).to.equal(7n); // RECEIVED
+
+    // Transporter completes when vehicle returns to warehouse:
+    await contract.connect(transporter).completeRequest(id);
+    [, , , status] = await contract.getRequest(id);
+    expect(status).to.equal(8n); // COMPLETED
   });
 });
+

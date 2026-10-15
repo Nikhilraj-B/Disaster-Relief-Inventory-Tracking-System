@@ -39,7 +39,9 @@ The Random Forest model will use features realistically obtainable from the IPFS
 *   **Strict Constraint:** This target variable is an analytical metric; it is **not** a blockchain `RequestStatus`.
 
 ## 5. Dataset Design
-Since this is a new system without real historical data, a **synthetic/academic dataset** will be generated for the prototype to mimic disaster-relief supply patterns.
+Since this is a new system without real historical data, a **synthetic/academic dataset** will be generated for the prototype to mimic disaster-relief supply patterns. 
+
+**IMPORTANT ACADEMIC CONSTRAINT:** The dataset is synthetic. The model is trained and evaluated on synthetic data. The reported performance represents performance on this synthetic dataset for prototype/academic evaluation. It must NOT be described as real-world disaster-relief prediction accuracy. Real-world validation would require historical disaster-relief request data.
 
 *   **Columns:** `requested_qty`, `item_category`, `camp_population`, `camp_capacity`, `current_inventory`, `historical_freq`, `is_abnormal`.
 *   **Data Types:** Numeric (Int/Float) and Categorical (String).

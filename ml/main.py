@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import joblib
 import os
+from feature_engineering import FeatureEngineer
 
 MODEL_PATH = os.getenv("MODEL_PATH", "model.joblib")
 

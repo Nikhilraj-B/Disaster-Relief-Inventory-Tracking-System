@@ -22,13 +22,13 @@ public class FacilityController extends EntityController<Facility> {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN','WAREHOUSE_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE_MANAGER')")
     public ResponseEntity<Facility> create(Facility entity) throws Exception {
         return super.create(entity);
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN','WAREHOUSE_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE_MANAGER')")
     public ResponseEntity<Facility> update(String id, Facility entity) throws Exception {
         return super.update(id, entity);
     }

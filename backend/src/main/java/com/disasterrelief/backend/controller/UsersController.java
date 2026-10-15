@@ -5,6 +5,7 @@ import com.disasterrelief.backend.dto.LinkWalletRequest;
 import com.disasterrelief.backend.model.Role;
 import com.disasterrelief.backend.model.User;
 import com.disasterrelief.backend.service.AuthService;
+import com.disasterrelief.backend.service.FacilityService;
 import com.disasterrelief.backend.store.UserStore;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,29 +32,32 @@ import java.util.UUID;
 public class UsersController {
 
     private final UserStore userStore;
-    private final AuthService authService;
+    private final FacilityService facilityService;
 
     /** Sanitized user view: identity + wallet only, never credentials. */
-    public record UserView(UUID id, String email, String fullName, Role role, String walletAddress) {}
+    public record UserView(UUID id, String email, String fullName, Role role, String walletAddress, UUID facilityId) {}
 
     @GetMapping
     public List<UserView> list() {
         try {
+            var facilities = facilityService != null ? facilityService.list() : List.<com.disasterrelief.backend.model.Facility>of();
             return userStore.findAll().stream()
-                    .map(u -> new UserView(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getWalletAddress()))
+                    .map(u -> {
+                        UUID facId = u.getFacilityId();
+                        if (facId == null && u.getId() != null) {
+                            facId = facilities.stream()
+                                    .filter(f -> u.getId().equals(f.getManagerUserId()))
+                                    .map(com.disasterrelief.backend.model.Facility::getId)
+                                    .findFirst()
+                                    .orElse(null);
+                        }
+                        return new UserView(u.getId(), u.getEmail(), u.getFullName(), u.getRole(), u.getWalletAddress(), facId);
+                    })
                     .toList();
         } catch (Exception e) {
             throw new RuntimeException("Failed to load users", e);
         }
     }
 
-    /**
-     * PUT /api/users/me/wallet
-     * Links the authenticated user's account to the connected MetaMask wallet.
-     * The account is derived from the JWT session server-side.
-     */
-    @PutMapping("/me/wallet")
-    public ResponseEntity<AuthResponse> linkWallet(@Valid @RequestBody LinkWalletRequest request) {
-        return ResponseEntity.ok(authService.linkWallet(request.walletAddress()));
-    }
+
 }

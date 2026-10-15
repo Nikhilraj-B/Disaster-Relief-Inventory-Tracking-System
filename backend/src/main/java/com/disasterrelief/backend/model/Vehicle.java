@@ -15,9 +15,13 @@ import java.util.UUID;
 public class Vehicle implements HasCid {
     private UUID id;
     private UUID organizationId;
+    private UUID warehouseId;
+    private UUID transportOfficerUserId;
     private String registrationNumber;
     private String vehicleType;
     private BigDecimal capacityKg;
+    private String driverName;
+    private String driverId;
     @Builder.Default
     private boolean active = true;
     private String cid;

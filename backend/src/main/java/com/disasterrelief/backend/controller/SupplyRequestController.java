@@ -38,7 +38,7 @@ public class SupplyRequestController extends EntityController<SupplyRequest> {
     }
 
     @Override
-    @PreAuthorize("hasAnyRole('CAMP_MANAGER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('CAMP_MANAGER','ADMIN')")
     public ResponseEntity<SupplyRequest> create(SupplyRequest entity) throws Exception {
         return super.create(entity);
     }
@@ -50,7 +50,7 @@ public class SupplyRequestController extends EntityController<SupplyRequest> {
 
     /** ADMIN approves: CREATED -> APPROVED. */
     @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<SupplyRequest> approve(@PathVariable String id,
                                                  @RequestBody(required = false) Map<String, String> body) throws Exception {
         return ResponseEntity.ok(supplyRequestService.transitionBlockchain(id, SupplyRequestStatus.CREATED,
@@ -59,52 +59,78 @@ public class SupplyRequestController extends EntityController<SupplyRequest> {
 
     /** WAREHOUSE accepts: APPROVED -> ACCEPTED (acceptRequest + optional assignTransporter). */
     @PostMapping("/{id}/accept")
-    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('WAREHOUSE_MANAGER','ADMIN')")
     public ResponseEntity<SupplyRequest> accept(@PathVariable String id,
                                                 @RequestBody(required = false) Map<String, String> body) throws Exception {
-        return ResponseEntity.ok(supplyRequestService.acceptBlockchain(id, body(body, "txHash"),
-                body(body, "txHashAssign"), body(body, "transporterWallet")));
+        return ResponseEntity.ok(supplyRequestService.acceptBlockchain(
+                id,
+                body(body, "txHash"),
+                body(body, "txHashAssign"),
+                body(body, "transporterWallet"),
+                body(body, "warehouseId"),
+                body(body, "vehicleId"),
+                body(body, "driverName"),
+                body(body, "driverId"),
+                body(body, "transporterUserId")
+        ));
     }
 
-    /** TRANSPORT dispatches: ACCEPTED -> DISPATCHED. */
+    /** TRANSPORT OFFICER assigns vehicle and driver to an accepted request. */
+    @PostMapping("/{id}/assign-driver")
+    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','ADMIN')")
+    public ResponseEntity<SupplyRequest> assignDriver(@PathVariable String id,
+                                                      @RequestBody(required = false) Map<String, String> body) throws Exception {
+        return ResponseEntity.ok(supplyRequestService.assignDriver(
+                id,
+                body(body, "txHashAssign"),
+                body(body, "transporterWallet"),
+                body(body, "vehicleId"),
+                body(body, "driverName"),
+                body(body, "driverId"),
+                body(body, "transporterUserId")
+        ));
+    }
+
+    /** TRANSPORT or WAREHOUSE dispatches: ACCEPTED -> DISPATCHED. */
     @PostMapping("/{id}/dispatch")
-    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','WAREHOUSE_MANAGER','ADMIN')")
     public ResponseEntity<SupplyRequest> dispatch(@PathVariable String id,
                                                   @RequestBody(required = false) Map<String, String> body) throws Exception {
         return ResponseEntity.ok(supplyRequestService.transitionBlockchain(id, SupplyRequestStatus.ACCEPTED,
                 SupplyRequestStatus.DISPATCHED, BlockchainFunction.DISPATCH_REQUEST, body(body, "txHash")));
     }
 
-    /** TRANSPORT marks in transit: DISPATCHED -> IN_TRANSIT. */
+    /** TRANSPORT or WAREHOUSE marks in transit: DISPATCHED -> IN_TRANSIT. */
     @PostMapping("/{id}/in-transit")
-    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','WAREHOUSE_MANAGER','ADMIN')")
     public ResponseEntity<SupplyRequest> inTransit(@PathVariable String id,
                                                    @RequestBody(required = false) Map<String, String> body) throws Exception {
         return ResponseEntity.ok(supplyRequestService.transitionBlockchain(id, SupplyRequestStatus.DISPATCHED,
                 SupplyRequestStatus.IN_TRANSIT, BlockchainFunction.MARK_IN_TRANSIT, body(body, "txHash")));
     }
 
-    /** TRANSPORT marks arrived: IN_TRANSIT -> ARRIVED. */
+    /** TRANSPORT or WAREHOUSE marks arrived: IN_TRANSIT -> ARRIVED. */
     @PostMapping("/{id}/arrived")
-    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','WAREHOUSE_MANAGER','ADMIN')")
     public ResponseEntity<SupplyRequest> arrived(@PathVariable String id,
                                                  @RequestBody(required = false) Map<String, String> body) throws Exception {
         return ResponseEntity.ok(supplyRequestService.transitionBlockchain(id, SupplyRequestStatus.IN_TRANSIT,
                 SupplyRequestStatus.ARRIVED, BlockchainFunction.MARK_ARRIVED, body(body, "txHash")));
     }
 
-    /** CAMP receives: ARRIVED -> RECEIVED. */
+    /** CAMP receives: IN_TRANSIT or ARRIVED -> RECEIVED. */
     @PostMapping("/{id}/receive")
-    @PreAuthorize("hasAnyRole('CAMP_MANAGER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('CAMP_MANAGER','ADMIN')")
     public ResponseEntity<SupplyRequest> receive(@PathVariable String id,
                                                  @RequestBody(required = false) Map<String, String> body) throws Exception {
-        return ResponseEntity.ok(supplyRequestService.transitionBlockchain(id, SupplyRequestStatus.ARRIVED,
+        return ResponseEntity.ok(supplyRequestService.transitionBlockchain(id,
+                java.util.Set.of(SupplyRequestStatus.IN_TRANSIT, SupplyRequestStatus.ARRIVED),
                 SupplyRequestStatus.RECEIVED, BlockchainFunction.RECEIVE_REQUEST, body(body, "txHash")));
     }
 
-    /** CAMP completes: RECEIVED -> COMPLETED. */
+    /** TRANSPORT or CAMP or ADMIN completes (vehicle returned to warehouse): RECEIVED -> COMPLETED. */
     @PostMapping("/{id}/complete")
-    @PreAuthorize("hasAnyRole('CAMP_MANAGER','GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('TRANSPORT_OFFICER','CAMP_MANAGER','ADMIN')")
     public ResponseEntity<SupplyRequest> complete(@PathVariable String id,
                                                   @RequestBody(required = false) Map<String, String> body) throws Exception {
         return ResponseEntity.ok(supplyRequestService.transitionBlockchain(id, SupplyRequestStatus.RECEIVED,
@@ -113,7 +139,7 @@ public class SupplyRequestController extends EntityController<SupplyRequest> {
 
     /** ADMIN or WAREHOUSE rejects: CREATED/APPROVED -> REJECTED. */
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN','WAREHOUSE_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','WAREHOUSE_MANAGER')")
     public ResponseEntity<SupplyRequest> reject(@PathVariable String id,
                                                 @RequestBody(required = false) Map<String, String> body) throws Exception {
         UUID approver = body != null && body.get("approverUserId") != null
@@ -126,7 +152,7 @@ public class SupplyRequestController extends EntityController<SupplyRequest> {
 
     /** Advances by one valid step (general-purpose, role-gated; no blockchain check). */
     @PostMapping("/{id}/advance")
-    @PreAuthorize("hasAnyRole('GOVERNMENT_ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     public ResponseEntity<SupplyRequest> advance(@PathVariable String id) throws Exception {
         return ResponseEntity.ok(supplyRequestService.advance(id));
     }

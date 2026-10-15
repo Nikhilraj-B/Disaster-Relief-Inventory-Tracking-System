@@ -6,8 +6,8 @@ declare global {
   interface Window {
     ethereum?: {
       request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
-      on?: (event: string, handler: () => void) => void
-      removeListener?: (event: string, handler: () => void) => void
+      on?: (event: string, handler: (...args: any[]) => void) => void
+      removeListener?: (event: string, handler: (...args: any[]) => void) => void
     }
   }
 }
@@ -17,20 +17,29 @@ export default function WalletConnect({
 }: {
   onAddress?: (address: string) => void
 }) {
-  const { user, linkWallet } = useAuth()
+  const { user } = useAuth()
   const [address, setAddress] = useState('')
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [linking, setLinking] = useState(false)
 
   useEffect(() => {
     if (window.ethereum?.on) {
-      const handler = () => setConnected(false)
+      const handler = (accounts: unknown) => {
+        const accs = accounts as string[]
+        if (accs && accs.length > 0) {
+          setAddress(accs[0])
+          setConnected(true)
+          onAddress?.(accs[0])
+        } else {
+          setConnected(false)
+          setAddress('')
+        }
+      }
       window.ethereum.on('accountsChanged', handler)
       return () => window.ethereum?.removeListener?.('accountsChanged', handler)
     }
-  }, [])
+  }, [onAddress])
 
   const connect = async () => {
     setError('')
@@ -49,44 +58,58 @@ export default function WalletConnect({
       onAddress?.(addr)
     } catch (err) {
       console.error('Wallet connection error:', err)
-      const msg = err instanceof Error ? err.message : (err as any)?.message || 'Wallet connection failed'
+      const msg = err instanceof Error ? err.message : (err as { message?: string })?.message || 'Wallet connection failed'
       setError(msg)
     } finally {
       setBusy(false)
     }
   }
 
-  const linked =
-    connected && !!user && user.walletAddress?.toLowerCase() === address.toLowerCase()
-
-  const link = async () => {
-    if (!connected || !address || !user) return
+  const switchAccount = async () => {
     setError('')
-    setLinking(true)
     try {
-      await linkWallet(address)
-      setError('Wallet linked to your account.')
+      if (window.ethereum?.request) {
+        await window.ethereum.request({
+          method: 'wallet_requestPermissions',
+          params: [{ eth_accounts: {} }],
+        })
+        await connect()
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to link wallet')
-    } finally {
-      setLinking(false)
+      console.error('Switch account error:', err)
     }
   }
+
+  const linked =
+    connected && !!user && user.walletAddress?.toLowerCase() === address.toLowerCase()
 
   return (
     <div className="wallet-connect">
       {connected ? (
-        <div className="wallet-connected">
+        <div className="wallet-connected" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span className="wallet-dot" />
-          <code className="cid">{address.slice(0, 8)}...{address.slice(-6)}</code>
+          <code className="cid" title={`Connected: ${address}`}>
+            {address.slice(0, 8)}...{address.slice(-6)}
+          </code>
           {linked ? (
-            <span className="muted"> (linked)</span>
+            <span className="muted" style={{ color: '#27ae60' }}> (matches account ✓)</span>
           ) : user ? (
-            <button className="btn btn-outline btn-sm" onClick={link} disabled={busy || linking}>
-              {linking ? 'Linking...' : 'Link wallet to account'}
-            </button>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span className="error-text">
+                (mismatch: switch to {user.walletAddress ? `${user.walletAddress.slice(0, 6)}...` : 'registered wallet'} in MetaMask)
+              </span>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                style={{ fontSize: '0.75rem', padding: '2px 8px' }}
+                onClick={switchAccount}
+                title="Select matching account in MetaMask"
+              >
+                Switch Account
+              </button>
+            </span>
           ) : (
-            <span className="muted"> (not linked to account)</span>
+            <span className="muted"> (ready to use)</span>
           )}
         </div>
       ) : (

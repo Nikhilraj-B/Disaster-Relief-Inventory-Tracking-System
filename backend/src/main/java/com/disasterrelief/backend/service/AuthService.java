@@ -2,12 +2,13 @@ package com.disasterrelief.backend.service;
 
 import com.disasterrelief.backend.dto.AuthResponse;
 import com.disasterrelief.backend.dto.LoginRequest;
-import com.disasterrelief.backend.dto.RegisterRequest;
+import com.disasterrelief.backend.dto.LoginRequest;
 import com.disasterrelief.backend.model.User;
 import com.disasterrelief.backend.security.JwtUtil;
 import com.disasterrelief.backend.store.UserStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import java.util.UUID;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -42,7 +43,11 @@ public class AuthService {
         return toResponse(user);
     }
 
-    public AuthResponse register(RegisterRequest request) {
+    public AuthResponse register(com.disasterrelief.backend.dto.RegisterRequest request) {
+        if (request.getRole() != com.disasterrelief.backend.model.Role.ADMIN) {
+            throw new RuntimeException("Public registration is only allowed for Admin accounts.");
+        }
+        
         boolean exists;
         try {
             exists = userStore.existsByEmail(request.getEmail());
@@ -104,12 +109,28 @@ public class AuthService {
         return toResponse(user);
     }
 
+    private final FacilityService facilityService;
+
     private String currentUserEmail() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth == null ? null : auth.getName();
     }
 
     private AuthResponse toResponse(User user) {
+        UUID facilityId = user.getFacilityId();
+        if (facilityId == null && facilityService != null && user.getId() != null) {
+            try {
+                for (var f : facilityService.list()) {
+                    if (user.getId().equals(f.getManagerUserId())) {
+                        facilityId = f.getId();
+                        user.setFacilityId(facilityId);
+                        userStore.save(user);
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
         String token = jwtUtil.generateToken(user);
         return AuthResponse.builder()
                 .token(token)
@@ -119,6 +140,7 @@ public class AuthService {
                 .fullName(user.getFullName())
                 .role(user.getRole())
                 .walletAddress(user.getWalletAddress())
+                .facilityId(facilityId)
                 .build();
     }
 }
